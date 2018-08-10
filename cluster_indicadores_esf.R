@@ -43,7 +43,7 @@ corrgram(banco_final[, -c(1,12)], order=NULL, lower.panel=panel.shade) #correlog
 
 #com o pacote corrplot
 #cria uma matriz de correlação
-correlacao <- cor(banco_final[, -c(1,11)]) 
+correlacao <- cor(banco_final[, c(2:11)]) 
 
 corrplot(correlacao) #correlograma
 

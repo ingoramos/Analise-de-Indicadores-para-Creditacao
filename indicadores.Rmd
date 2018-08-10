@@ -69,7 +69,7 @@ corrgram(banco_final[, -c(1,12)], order=NULL, lower.panel=panel.shade)
 #**Correlograma 2**
 Correlograma entre as variáveis do banco de dados
 ```{r}
-correlacao <- cor(banco_final[, -c(1,11)]) 
+correlacao <- cor(banco_final[, c(2:11)])
 corrplot(correlacao)
 ```
 
