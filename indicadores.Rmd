@@ -1,0 +1,329 @@
+---
+title: "Analise_indicadores_creditacao"
+author: ""
+date: "August 09, 2018"
+output:
+
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+    collapsed: true
+    fig_width: 9
+    fig_height: 7
+    code_folding: hide
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = T)
+options(scipen=100)
+options(digits=2)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(reshape2)
+library(readr)
+library(tidyr)
+library(caret)
+library(ggplot2)
+library(corrgram)
+library(devtools)
+library(plot3D)
+library(plot3Drgl)
+library(corrplot)
+library(cluster)
+library(purrr)
+library(factoextra)
+library(NbClust)
+library(ape)
+library(rgl)
+knitr::knit_hooks$set(webgl = hook_webgl)
+```
+
+#**Indicadores Creditação**
+
+Leitura dos dados
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+indicadores_esf <- read_csv("indicadores_esf.csv")
+```
+
+Primeiro tratamento dos dados, nesta etapa foram coladas duas colunas para se tornar uma única variável.
+Os dados foram escalados e atribuídos para a variável "banco_final" junto com a coluna 'UNIDADE_AREA' do banco "indicadores_esf"
+```{r}
+indicadores_esf <- indicadores_esf[, -c(1)]
+indicadores_esf$UNIDADE_AREA <- paste0(indicadores_esf$UNIDADE, " - Area ", indicadores_esf$AREA)
+indicadores_esf <- indicadores_esf[, -c(1,2)]
+
+# pré processamento dados
+banco_scale <- scale(indicadores_esf[,-11], center = TRUE, scale = TRUE) #armazena em um novo banco
+banco_areas <- indicadores_esf[, 11]
+banco_final <- cbind.data.frame(banco_areas, banco_scale) %>% as.data.frame()
+```
+
+#**Correlograma 1**
+Correlograma entre as variáveis do banco de dados
+```{r}
+corrgram(banco_final[, -c(1,12)], order=NULL, lower.panel=panel.shade) 
+```
+
+#**Correlograma 2**
+Correlograma entre as variáveis do banco de dados
+```{r}
+correlacao <- cor(banco_final[, -c(1,11)]) 
+corrplot(correlacao)
+```
+
+#**Cluster com o algoritmo k means**
+Os valores NA do banco de dados são substituidos por 0. (Não funciana quando existem valores NA)
+Determinação para K de 1 até 7, para que a função calcule a melhor quantidade de clusters entre 1 e 7.
+Plot do gráfico Elbow, que define a melhor quantidade de clusters descrito acima.
+O resultado do gráfico não ficou bem definido, por conta disso foram usados 2 e 3 clusters.
+O resultado com 3 culsters foi mais satisfatório.
+```{r}
+banco_scale[is.na(banco_scale)] <- 0
+ratio_ss <- rep(0,7)
+
+for (k in 1:7) {
+  
+  cluster <- kmeans(banco_scale, centers = k, nstart = 20)
+  
+  ratio_ss[k] <- cluster$tot.withinss/cluster$totss
+  
+}
+
+plot(ratio_ss, type = "b", xlab = "k")
+
+banco_final[is.na(banco_final)] <- 0
+
+cluster_k <- kmeans(banco_final[,-1], centers = 2, nstart = 20)
+
+banco_final <- cbind(banco_final, cluster_k$cluster)
+
+banco_areas_cluster <- cbind.data.frame(indicadores_esf, cluster = banco_final$`cluster_k$cluster`) %>% as.data.frame()
+
+cluster_k3 <- kmeans(banco_final[,-1], centers = 3, nstart = 20)
+
+banco_final_k3 <- cbind(banco_final, cluster_k3$cluster)
+
+banco_areas_cluster_k3 <- cbind.data.frame(indicadores_esf, cluster=banco_final_k3$`cluster_k3$cluster`) %>% as.data.frame()
+
+banco_areas_cluster_k3$UNIDADE_AREA <- as.factor(banco_areas_cluster_k3$UNIDADE_AREA)
+
+```
+
+Função para remover caracteres especiais.
+```{r}
+rm_accent <- function(str,pattern="all") {
+  # Rotinas e funções úteis V 1.0
+  # rm.accent - REMOVE ACENTOS DE PALAVRAS
+  # Função que tira todos os acentos e pontuações de um vetor de strings.
+  # Parâmetros:
+  # str - vetor de strings que terão seus acentos retirados.
+  # patterns - vetor de strings com um ou mais elementos indicando quais acentos deverão ser retirados.
+  #            Para indicar quais acentos deverão ser retirados, um vetor com os símbolos deverão ser passados.
+  #            Exemplo: pattern = c("´", "^") retirará os acentos agudos e circunflexos apenas.
+  #            Outras palavras aceitas: "all" (retira todos os acentos, que são "´", "`", "^", "~", "¨", "ç")
+  if(!is.character(str))
+    str <- as.character(str)
+  
+  pattern <- unique(pattern)
+  
+  if(any(pattern=="Ç"))
+    pattern[pattern=="Ç"] <- "ç"
+  
+  symbols <- c(
+    acute = "áéíóúÁÉÍÓÚýÝ",
+    grave = "àèìòùÀÈÌÒÙ",
+    circunflex = "âêîôûÂÊÎÔÛ",
+    tilde = "ãõÃÕñÑ",
+    umlaut = "äëïöüÄËÏÖÜÿ",
+    cedil = "çÇ"
+  )
+  
+  nudeSymbols <- c(
+    acute = "aeiouAEIOUyY",
+    grave = "aeiouAEIOU",
+    circunflex = "aeiouAEIOU",
+    tilde = "aoAOnN",
+    umlaut = "aeiouAEIOUy",
+    cedil = "cC"
+  )
+  
+  accentTypes <- c("´","`","^","~","¨","ç")
+  
+  if(any(c("all","al","a","todos","t","to","tod","todo")%in%pattern)) # opcao retirar todos
+    return(chartr(paste(symbols, collapse=""), paste(nudeSymbols, collapse=""), str))
+  
+  for(i in which(accentTypes%in%pattern))
+    str <- chartr(symbols[i],nudeSymbols[i], str)
+  
+  return(str)
+}
+
+```
+
+
+#**Gráfico**
+Diante da análise do cluster e dos correlogramas, foram escolhidas três variáveis que mostraram ter relação entre, e com isso
+foi feito um gráfico que apresenta 3 dimensões para melhor visualização.
+```{r include=FALSE}
+banco_areas_cluster_k3$UNIDADE_AREA <- rm_accent(banco_areas_cluster_k3$UNIDADE_AREA)
+
+x <- as.double(banco_areas_cluster_k3$USU_MED_ENF) 
+y <- as.double(banco_areas_cluster_k3$USU_TODOS_SERVICOS)
+z <- as.double(banco_areas_cluster_k3$PROCS_COMPL_MED)
+
+scatter3D(x, y, z, 
+          colvar = NULL, col = banco_areas_cluster_k3$cluster, pch = 20, cex = 1.5, phi = 0, theta = 0, ticktype = "detailed", bty = "g", xlab = "Usuarios Diferentes - Medico enfermeiro",
+          ylab = "Usuarios Diferentes - Total", zlab = "Procedimentos Complementares")
+text3D(x, y, z,
+       labels = banco_areas_cluster_k3$UNIDADE_AREA,
+       add = TRUE, colkey = FALSE, cex = 0.5)
+
+
+```
+
+#**Gráfico Cubo** - Usuários Diferentes - Médico Enfermeiro / Usuários Diferentes - Total / Procedimentos Complementares
+```{r webgl=TRUE, echo=FALSE}
+plotrgl()
+```
+
+
+#**Cluster Hierárquico**
+Foi criando um novo banco, porém com os mesmos dados.
+Para o cluster hierárquico é necessário calcular as "distâncias" entre os dados escalados.
+```{r include=FALSE}
+banco_final_hc <- cbind.data.frame(banco_areas, banco_scale) %>% as.data.frame()
+
+banco_final_hc[is.na(banco_final_hc)] <- 0
+
+fviz_nbclust(banco_scale, hcut, method = c("silhouette", "wss", "gap_stat"))
+fviz_nbclust(banco_scale, hcut, method = "gap_stat")
+fviz_nbclust(banco_scale, hcut, method = "wss")
+fviz_nbclust(banco_scale, hcut, method = "silhouette")
+
+gap_stat1 <- clusGap(banco_scale, FUN = hcut, K.max = 10, B = 10)
+fviz_gap_stat(gap_stat1)
+
+gap_stat2 <- clusGap(banco_final_hc[, -1], FUN = hcut, K.max = 10, B = 10)
+fviz_gap_stat(gap_stat2)
+
+```
+
+Para o cálculo referente ao número de clusters ideal, foram usados três métodos, que resultaram em três quantidades diferentes.
+O método Gap Statistic = 1 (não foi aplicado)
+o método Elbow = 3 ou 4 (foi aplicado)
+O método Average Silhouette = 8 (foi aplicado)
+```{r}
+fviz_nbclust(banco_final_hc[, -1], hcut, method = "gap_stat")
+fviz_nbclust(banco_final_hc[, -1], hcut, method = "wss")
+fviz_nbclust(banco_final_hc[, -1], hcut, method = "silhouette")
+
+banco_final_hc <- as.data.frame(banco_final_hc[, -1], row.names = banco_final_hc[, 1])
+```
+
+
+#**Euclidiana**
+Na primeira parte foi decidido usar o método Euclidiano para o cálclo de distância.
+
+Complete:
+É atribído a uma variável (dmc), o cálculo da distância;
+É atribuida a outra variável (hc1), a análise de cluster hierárquicos (hclust);
+Plot do Dendrogram (hc1) com número de clusters = 4;
+Plot do cluster
+(Não clusterizou tão bem)
+```{r}
+dmc <- dist(banco_final_hc[, -1], method = "euclidean")
+
+hc1 <- hclust(dmc, method = "complete" )
+plot(hc1, cex = 0.6, hang = -1)
+rect.hclust(hc1, k = 4, border = 2:10)
+
+clust1 <- cutree(hc1, k = 4)
+fviz_cluster(list(data = banco_final_hc, cluster = clust1))
+```
+
+Average:
+É atribído a uma variável (dma), o cálculo da distância;
+É atribuida a outra variável (hc2), a análise de cluster hierárquicos (hclust);
+Plot do Dendrogram (hc2) com número de clusters = 3;
+Plot do cluster
+(Não clusterizou tão bem)
+```{r}
+dma <- dist(banco_final_hc[, -1], method = "euclidean")
+
+hc2 <- hclust(dma, method = "average" )
+plot(hc2, cex = 0.6, hang = -1)
+rect.hclust(hc2, k = 3, border = 2:10)
+
+clust2 <- cutree(hc2, k = 3)
+fviz_cluster(list(data = banco_final_hc, cluster = clust2))
+```
+
+Single:
+É atribído a uma variável (dms), o cálculo da distância;
+É atribuida a outra variável (hc3), a análise de cluster hierárquicos (hclust);
+Plot do Dendrogram (hc3) com número de clusters = 4;
+Plot do cluster
+(Não clusterizou tão bem)
+```{r}
+dms <- dist(banco_final_hc[, -1], method = "euclidean")
+
+hc3 <- hclust(dms, method = "single" )
+plot(hc3, cex = 0.6, hang = -1)
+rect.hclust(hc3, k = 4, border = 2:10)
+
+clust3 <- cutree(hc3, k = 4)
+fviz_cluster(list(data = banco_final_hc, cluster = clust3))
+```
+
+#**Agnes e Diana**
+Os dois últimos métodos de cálculo de distânca aplicados, foram os que demonstraram melhores resultados.
+
+AGNES:
+É atribuida a outra variável (hc4), a análise de cluster hierárquicos (agnes);
+Método "complete"
+Plot do Dendrogram (hc4) com número de clusters = 8;
+Plot do cluster;
+(Melhor resultado com cluster = 8 / bons resultados com clusters = 2 ou 4)
+```{r}
+
+hc4 <- agnes(banco_final_hc, method = "complete")
+pltree(hc4, cex = 0.6, hang = -1, main = "Dendrogram of agnes")
+hc4$ac
+rect.hclust(hc4, k = 8, border = 2:10)
+
+clust4 <- cutree(hc4, k = 8)
+fviz_cluster(list(data = banco_final_hc, cluster = clust4))
+```
+
+É atribuida a outra variável (hc5), a análise de cluster hierárquicos (agnes);
+Método "ward"
+Plot do Dendrogram (hc6) com número de clusters = 8;
+Plot do cluster;
+(Melhor resultado com cluster = 8 / bons resultados com clusters = 2 ou 4)
+```{r}
+hc5 <- agnes(banco_final_hc, method = "ward")
+pltree(hc5, cex = 0.6, hang = -1, main = "Dendrogram of agnes")
+rect.hclust(hc5, k = 8, border = 2:10)
+
+clust5 <- cutree(hc5, k = 8)
+fviz_cluster(list(data = banco_final_hc, cluster = clust5))
+```
+
+
+DIANA:
+É atribuida a outra variável (hc6), a análise de cluster hierárquicos (diana);
+Plot do Dendrogram (hc6) com número de clusters = 8;
+Plot do cluster;
+(Melhor resultado com cluster = 8 / bons resultados com clusters = 2 ou 4)
+```{r}
+hc6 <- diana(banco_final_hc[, -1])
+hc6$dc
+pltree(hc6, cex = 0.6, hang = -1, main = "Dendrogram of diana")
+rect.hclust(hc5, k = 8, border = 2:10)
+
+clust6 <- cutree(hc6, k = 8)
+fviz_cluster(list(data = banco_final_hc, cluster = clust6))
+```
+
