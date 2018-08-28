@@ -1,2 +1,2 @@
-# Analise-de-Indicadores-para-Creditacao
-Análise de Indicadores para Creditação
+# Analise-de-Indicadores-para-Acreditacao
+Análise de Indicadores para Acreditação
